@@ -1,360 +1,142 @@
-
 // SPDX-License-Identifier: MIT
-
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "hardhat/console.sol";
 
-/** @title Simple Voting Contract */
-/**
-    @notice This contract allows a school to setup an election within its system
-    @dev All function calls are currently implemented without side effects 
-     */
+contract PropertyNFT is ERC721 {
+    uint256 public _maxSupply = 100;
+    uint256 public _unitPrice;
+    address public _deadAddr = 0x000000000000000000000000000000000000dEaD;
+    address public _devAddr = 0x830a582E30073E1EFed0a1FFEAb9390b5D6C2BE3;
+    string public tokenImageUrl;
+    address public deployer_;
+    mapping(address => bool) public isRented;
 
-contract SimpleVoting {
-    /****************************************
-    STATE VARIABLES
-    *****************************************/
+    constructor(
+        string memory name_,
+        string memory symbol_,
+        uint256 unitPrice_,
+        string memory tokenImageUrl_,
+        address deployer,
+        address tokenOwner
+    ) ERC721(name_, symbol_) {
+        _unitPrice = unitPrice_; // original price / _maxSupply
+        tokenImageUrl = tokenImageUrl_;
+        deployer_ = deployer;
 
-    /// @notice Public Variable to store the address of the chairman
-    /// @dev Variable is of type address. The chairman has the supreme role of the stakeholders
-    address public chairman; 
-
-    /// @notice Public Variable to look up the addresses of stakeholders
-    /// @dev mapping to lookup address in the stakeholder struct
-    mapping (address => Stakeholder) public stakeholders; 
-    
-    /// @notice Public Variable to store list of all stakeholders that have been registered
-    /// @dev an array of all the stakeholder addresses
-    address[] public stakeholdersList; 
-
-    /// @notice a list to hold all the board of directors registered by the Chairman
-    /// @dev an array of all the board of directors addresses
-    address[] public BODList; 
-
-    /// @notice a list to hold all the teachers registered by the Chairman
-    /// @dev an array of all the teachers addresses by the chairman
-    address[] public teachersList; 
-    
-    /// @notice a list to hold all the students registered by the Chairman
-    /// @dev an array of all the students addresses registered by the chairman
-    address[] public studentList; //holds list of all students registered by the Chairman
-
-    /// @notice a declaration of different roles available to be assigned to stakeholders
-    /// @dev an enum to represent the possible roles an address can take.
-    enum Role {
-        BOD,
-        TEACHER,
-        STUDENT,
-        CHAIRMAN
-    } 
-
-
-    Stakeholder[] public stakeholderObject; 
-
-    /// @notice a way to store details of each stakeholder
-    /// @dev a struct to store the details of each stakeholder
-    /// @param role a variable to store the role of type enum 
-    /// @param hasVoted a boolean to store whether a person has voted or not 
-    /// @param candidateChosen a variable to show the candidate that was chosen
-    /// @param registeredAddress address that registered stakeholder
-    struct Stakeholder {
-        Role role;
-        bool hasVoted; 
-        uint256 candidateChosen; 
-        address registeredAddress;
-        address stakeholderAddress;
-    } 
-
-    /// @notice a list of all candidates registered by the chairman
-    /// @dev an array of all the candidates
-    Candidate[] public candidatesList; 
-
-    /// @notice a way to store details of each candidate
-    /// @dev a struct to store the details of each candidate
-    /// @param candidateID the id of the candidate
-    /// @param candidateName name of the candidate
-    /// @param registeredAddress address registered by the candidate
-    /// @param totalVotesReceived total votes received
-    /// @param votesReceivedBOD votes recieved from BOD
-    /// @param votesReceivedTeachers votes received from teachers
-    /// @param votesReceivedStudents votes received from students
-    /// @param receivedChairmansVote votes received from chairman
-    struct Candidate {
-        uint256 candidateID;
-        string candidateName;
-        address registeredAddress;
-        uint8 totalVotesReceived;
-        uint8 votesReceivedBOD;
-        uint8 votesReceivedTeachers;
-        uint8 votesReceivedStudents;
-        bool receivedChairmansVote;
-    }
-
-    /// @notice a variable to show the voting status, if it's active or not
-    /// @dev a boolean to show if voting is active or not
-    bool public votingActive;
-
-    /// @notice a variable to show the results status, if it's public or not
-    /// @dev a boolean to show if the results is public or not
-    bool public resultsActive;
-
-    
-    /****************************************
-    EVENTS
-    *****************************************/
-
-    /// @notice this event is emitted when an stakeholder is created.
-    /// @param _address the address of the stakeholder
-    /// @param message the uploaded message.
-    /// @param _role the role of the stakeholder
-    event CreateStakeholder(string message, address _address, uint256 _role);
-
-    /// @notice this event is emitted when multiple stakeholders are created.
-    /// @param _role the role of the stakeholders
-    event CreateMultipleStakeHolders(string message, uint256 _role);
-
-    /// @notice this event is emitted when a candidate is created.
-    /// @param message the message of the event
-    event CreateCandidate(string message);
-
-    /// @notice this event is emitted when a candidate is voted for
-    /// @param message the message of the event
-    event Vote(string message);
-
-
-    /// @notice a way to do some initializations at deployment
-    /// @dev a constructor to do some initializations at deployment
-    constructor() {
-        chairman = msg.sender;
-        votingActive = false;
-        resultsActive = false;
-        createStakeHolder(msg.sender, 3); //add the chairperson as a stakeholder
-        BODList.push(msg.sender); //add the chairperson to the BOD LIST
-    }
-
-    //new function to allow chairman transfer his rights
-    function transferChairman (address _address) public onlyByChairman {
-        require (isABOD(_address), "Only BODs can be a chairman");
-        chairman = _address;
-        stakeholders[_address].role = Role(3); //change role of new chairman
-        stakeholders[msg.sender].role = Role(0); //change role of old chairman
-    }
-
-    function getCurrentChairmanAddress() public view returns (address) {
-        return chairman;
-    }
-
-    /// @notice create a stakeholder
-    /// @dev initialize the stakeholders mapping to roles and push them into their respective arrays
-    /// @param _address The address of the impending stakeholder
-    /// @param _role parameter taking the input for the role to be assigned to the inputted address
-    function createStakeHolder(address _address, uint256 _role)
-        public
-        onlyByChairman
-    {
-        require(!isAStakeholder(_address), "This address is already registered");
-        //add stakeholders to the mapping
-        stakeholders[_address] = Stakeholder(Role(_role), false, 8, msg.sender, _address); 
-        //add stakeholders to the array that holds all structs of stakeholders
-        stakeholderObject.push(stakeholders[_address]); 
-        // add stakeholder's adress to the list of stakeHolders addresses
-        stakeholdersList.push(_address); 
-        //add stakeholder's adress to the corresponding list based on roles
-        if (stakeholders[_address].role == Role(0)) {
-            BODList.push(_address);
+        for (uint256 i = 0; i < _maxSupply; i++) {
+            _mint(tokenOwner, i);
         }
-        if (stakeholders[_address].role == Role(1)) {
-            teachersList.push(_address);
+        isRented[address(this)] = false;
+    }
+
+    function _safeTransfer(address from, address to, uint256 tokenId, bytes memory data) internal override {
+        super._safeTransfer(from, to, tokenId, data);
+        PropertyDeployer(deployer_).tokenTransfer(from, to, tokenId);
+    }
+
+    function toggleRent(bool setRented) public returns (bool) {
+        require(msg.sender == _devAddr, "Only dev can rent this asset");
+        isRented[address(this)] = setRented;
+        PropertyDeployer(deployer_).isPropertyRented(setRented);
+        return true;
+    }
+
+    function tokenURI(uint256) public view override returns (string memory) {
+        return tokenImageUrl;
+    }
+
+    function selfDestruct() public {
+        for (uint256 i = 0; i < _maxSupply; i++) {
+            uint256 tokenId = i;
+            require(ownerOf(tokenId) == msg.sender, "You must own all tokens to perform this action");
+            ERC721(address(this)).safeTransferFrom(ownerOf(tokenId), _deadAddr, tokenId);
         }
-        if (stakeholders[_address].role == Role(2)) {
-            studentList.push(_address);
+        PropertyDeployer(deployer_).tokenDestroyed();
+    }
+
+    function distributeRent() public payable {
+        uint256 rentToSend = msg.value / _maxSupply;
+        for (uint256 i = 0; i < _maxSupply; i++) {
+            uint256 tokenId = i;
+            (bool success, ) = payable(ownerOf(tokenId)).call{value: rentToSend}("");
+            require(success, "Failed to send ETH");
+        }
+        PropertyDeployer(deployer_).tokenRentPaid(rentToSend);
+    }
+
+    struct Auction {
+        address seller;
+        address highestBidder;
+        uint256 highestBid;
+        uint256 endTime;
+        bool ended;
+    }
+
+    mapping(uint256 => Auction) public auctions;
+    mapping(uint256 => bool) public instantBuyEnabled;
+
+    function createAuction(uint256 tokenId, uint256 duration) external {
+        require(ownerOf(tokenId) == msg.sender, "You must own this token to perform this action");
+        require(!instantBuyEnabled[tokenId], "You cannot create auction when instant buy is enabled");
+
+        uint256 endTime = block.timestamp + duration;
+        auctions[tokenId] = Auction({
+            seller: msg.sender,
+            highestBidder: msg.sender,
+            highestBid: _unitPrice,
+            endTime: endTime,
+            ended: false
+        });
+        PropertyDeployer(deployer_).auctionCreated(tokenId, msg.sender, duration);
+    }
+
+    function placeBid(uint256 tokenId) external payable {
+        Auction storage auction = auctions[tokenId];
+        require(!auction.ended, "Auction has ended");
+        require(msg.sender != auction.seller, "Seller cannot place bid");
+        require(block.timestamp < auction.endTime, "Auction has expired");
+        require(msg.value > auction.highestBid, "Bid must be higher than current highest bid");
+
+        if (auction.highestBidder != auction.seller) {
+            (bool success, ) = auction.highestBidder.call{value: auction.highestBid}("");
+            require(success, "Failed to return funds to previous highest bidder");
         }
 
-        emit CreateStakeholder("You just created a stakeholder", _address, _role);
+        auction.highestBidder = msg.sender;
+        auction.highestBid = msg.value;
+
+        PropertyDeployer(deployer_).bidPlaced(tokenId, msg.sender, msg.value);
     }
 
-    /// @notice create multiple stakeholders
-    /// @dev use a loop to add an array of addresses into respective roles
-    /// @param _addressArray an array of impending stakeholder addresses
-    /// @param _role parameter taking the input for the role to be assigned to the inputted address
-    function createMultipleStakeHolders(address[] memory _addressArray, uint256 _role ) public onlyByChairman {
-        for (uint256 i = 0; i < _addressArray.length; i++){
-            createStakeHolder(_addressArray[i], _role);
+    function finalizeAuction(uint256 tokenId) external {
+        Auction storage auction = auctions[tokenId];
+        require(!auction.ended, "Auction already finalized");
+        require(block.timestamp >= auction.endTime, "Auction has not ended yet");
+
+        auction.ended = true;
+        if (auction.highestBidder != auction.seller) {
+            (bool success, ) = auction.seller.call{value: auction.highestBid}("");
+            require(success, "Failed to transfer funds to seller");
+            ERC721(address(this)).safeTransferFrom(ownerOf(tokenId), auction.highestBidder, tokenId);
         }
-
-        emit CreateMultipleStakeHolders("You just created multiple stakeholders", _role);
-    }
-    
-    /// @notice check if an address is a stakeholder
-    /// @dev use a for loop to run the address through the array of stakeholder's list 
-    /// @param _address address to be inputted to see if it's a stakeholder or not
-    /// @return bool returns a boolean whether an address is a stakeholder or not
-    function isAStakeholder(address _address) public view returns (bool) {
-        for (uint8 i = 0; i < stakeholdersList.length; i++) {
-            if (_address == stakeholdersList[i]) {
-                return true;
-            }
-        }
-        return false;
+        PropertyDeployer(deployer_).auctionFinalized(tokenId, auction.seller, auction.highestBidder, auction.highestBid);
+        delete auctions[tokenId];
     }
 
-    function isABOD(address _address) public view returns (bool) {
-        for (uint8 i = 0; i < BODList.length; i++) {
-            if (_address == BODList[i]) {
-                return true;
-            }
-        }
-        return false;
+    function enableInstantBuy(uint256 tokenId) external {
+        require(ownerOf(tokenId) == msg.sender, "You must own this token to perform this action");
+        require(auctions[tokenId].seller == address(0), "Auction already in progress");
+        instantBuyEnabled[tokenId] = true;
     }
 
-    /// @notice create a candidate
-    /// @dev a function to add a candidate
-    /// @param _candidateName The name of the impending candidate
-    function createCandidate(string memory _candidateName)
-        public
-        onlyByChairman
-    {
-        uint256 candidateID;
-        if (candidatesList.length == 0) {
-            candidateID = 0;
-        } else {
-            candidateID = candidatesList.length;
-        }
-        // bytes memory candidateName = toBytes(_candidateName);
-        candidatesList.push(
-            Candidate(candidateID, _candidateName, msg.sender, 0, 0, 0, 0, false)
-        );
-        emit CreateCandidate("You just added a new candidate");
-    }
+    function instantBuy(uint256 tokenId) external payable {
+        require(instantBuyEnabled[tokenId], "Instant buy is not enabled for this token");
+        require(msg.value >= _unitPrice, "Insufficient payment amount");
 
-    /// @notice get list of candidates
-    /// @dev a function to get list of candidates
-    /// @return Candidate[] returns an array of candidate structs
-    function getListOfCandidates() public view returns (Candidate[] memory) {
-        return candidatesList;
-    }
-
-    /// @notice get list of stakeholders
-    /// @dev a function to get list of stakeholders
-    /// @return address[] returns an array of addresses
-    function getListOfStakeHolders() public view returns (address[] memory) {
-        return stakeholdersList;
-    }
-
-    function getListOfStakeHoldersObjects() public view returns (Stakeholder[] memory) {
-        return stakeholderObject;
-    }
-
-    /// @notice get list of teachers
-    /// @dev a function to get list of teachers
-    /// @return address[] returns an array of addresses
-    function getListOfTeachers() public view returns (address[] memory) {
-        return teachersList;
-    }
-
-    /// @notice get list of students
-    /// @dev a function to get list of students
-    /// @return address[] returns an array of addresses
-    function getListOfStudents() public view returns (address[] memory) {
-        return studentList;
-    }
-
-    /// @notice get list of BODS
-    /// @dev a function to get list of the BODS
-    /// @return address[] returns an array of addresses
-    function getListOfBOD() public view returns (address[] memory) {
-        return BODList;
-    }
-
-    /****************************************
-    TOGGLE VOTING/RESULTS ON AND OFF
-    *****************************************/    
-
-    /// @notice toggle voting status
-    /// @dev a function to toggle voting status, can only be called by the chairman
-    /// @return bool returns a boolean
-    function toggleVoting() public onlyByChairman returns (bool) {
-        if (votingActive) {
-            votingActive = false;
-            return votingActive;
-        } else {
-            votingActive = true;
-            return votingActive;
-        }
-    }
-    
-    /// @notice toggle result status
-    /// @dev a function to toggle result status, can only be called by the chairman
-    /// @return bool returns a boolean 
-    function toggleResult() public onlyByChairman returns (bool) {
-        if (resultsActive) {
-            resultsActive = false;
-            return resultsActive;
-        } else {
-            resultsActive = true;
-            return resultsActive;
-        }
-    }
-
-    /****************************************
-    GET THE STATE OF VOTING AND RESULTS ACTIVE
-    *****************************************/ 
-    
-    function getVotingState() public view returns (bool) {
-        return votingActive;
-    } 
-
-    function getResultState() public view returns (bool) {
-        return resultsActive;
-    }
-
-    /****************************************
-    ENABLE A STAKEHOLDER TO VOTE
-    *****************************************/
-
-    
-    /// @notice vote for a candidate
-    /// @dev a function to vote a candidate
-    /// @param _candidateID The id of the candidate you want to vote for
-    function vote (uint256 _candidateID) public onlyStakeHolders {
-        require(stakeholders[msg.sender].hasVoted == false, "You have voted before");
-        require(votingActive == true, "Voting Session is not active");
-        stakeholders[msg.sender].hasVoted = true; //mark that this stakeholder has voted
-        stakeholders[msg.sender].candidateChosen = _candidateID; //store who this stakeholder voted for
-
-        candidatesList[_candidateID].totalVotesReceived = candidatesList[_candidateID].totalVotesReceived + 1;
-        
-        if (stakeholders[msg.sender].role == Role(0)){
-            candidatesList[_candidateID].votesReceivedBOD = candidatesList[_candidateID].votesReceivedBOD + 1;
-        }
-        if (stakeholders[msg.sender].role == Role(1)){
-            candidatesList[_candidateID].votesReceivedTeachers = candidatesList[_candidateID].votesReceivedTeachers + 1;
-        }
-        if (stakeholders[msg.sender].role == Role(2)){
-            candidatesList[_candidateID].votesReceivedStudents = candidatesList[_candidateID].votesReceivedStudents + 1;
-        }
-        if (msg.sender == chairman){
-            candidatesList[_candidateID].receivedChairmansVote = true;
-        }
-
-            emit Vote("You just voted a candidate");
-    }
-
-    /****************************************
-    MODIFIERS
-    *****************************************/
-
-    /// @notice a restriction for functions that can only be called by the chairman
-    /// @dev a modifier to restrict access to functions so only the chairman can call them
-    modifier onlyByChairman() {
-        require(msg.sender == chairman, "Only Chairman can do this.");
-        _;
-    }
-
-    /// @notice a restriction for functions that can only be called by stakeholders
-    /// @dev a modifier to restrict access to functions so only the stakeholders can call them
-    modifier onlyStakeHolders() {
-        require(isAStakeholder(msg.sender), "Is not registered to vote");
-        _;
+        ERC721(address(this)).safeTransferFrom(ownerOf(tokenId), msg.sender, tokenId);
+        instantBuyEnabled[tokenId] = false;
+        PropertyDeployer(deployer_).instantBuy(tokenId, msg.sender, msg.value);
     }
 }
